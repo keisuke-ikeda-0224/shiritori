@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>しりとり vs AI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', 'Hiragino Sans', sans-serif;
+      background: #0f0f1a;
+      color: #eee;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin: 20px 0 4px;
+      background: linear-gradient(90deg, #a78bfa, #60a5fa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    #subtitle { color: #888; font-size: 0.85rem; margin-bottom: 20px; }
+
+    #scoreboard {
+      display: flex;
+      gap: 40px;
+      margin-bottom: 16px;
+    }
+
+    .score-box {
+      text-align: center;
+      background: #1a1a2e;
+      border-radius: 12px;
+      padding: 10px 24px;
+      border: 1px solid #2a2a4a;
+    }
+
+    .score-box .label { font-size: 0.75rem; color: #888; }
+    .score-box .val { font-size: 1.6rem; font-weight: bold; }
+    #player-score .val { color: #a78bfa; }
+    #ai-score .val { color: #60a5fa; }
+    #timer-box .val { color: #f59e0b; }
+
+    #history-container {
+      width: 100%;
+      max-width: 500px;
+      height: 260px;
+      overflow-y: auto;
+      background: #12121f;
+      border-radius: 12px;
+      border: 1px solid #2a2a4a;
+      padding: 12px;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .entry {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+    .tag {
+      font-size: 0.7rem;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 99px;
+      min-width: 50px;
+      text-align: center;
+    }
+
+    .tag.you { background: #4c1d95; color: #c4b5fd; }
+    .tag.ai  { background: #1e3a5f; color: #93c5fd; }
+    .tag.sys { background: #292929; color: #888; }
+
+    .word { font-size: 1.1rem; }
+    .word .kana { font-size: 0.75rem; color: #666; margin-left: 4px; }
+
+    #current-char {
+      font-size: 1rem;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    #current-char span {
+      font-size: 1.4rem;
+      font-weight: bold;
+      color: #f59e0b;
+    }
+
+    #input-row {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+      max-width: 500px;
+    }
+
+    #word-input {
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 2px solid #2a2a4a;
+      background: #1a1a2e;
+      color: #eee;
+      font-size: 1.1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #word-input:focus { border-color: #a78bfa; }
+    #word-input:disabled { opacity: 0.4; }
+
+    button {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    button:active { transform: scale(0.96); }
+
+    #submit-btn {
+      background: linear-gradient(135deg, #7c3aed, #2563eb);
+      color: white;
+    }
+
+    #submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #message {
+      margin-top: 14px;
+      font-size: 0.95rem;
+      min-height: 1.4em;
+      color: #f87171;
+      font-weight: bold;
+    }
+
+    #message.ok { color: #34d399; }
+
+    #restart-btn {
+      margin-top: 16px;
+      background: #1f2937;
+      color: #9ca3af;
+      border: 1px solid #374151;
+      display: none;
+    }
+
+    #used-words {
+      margin-top: 16px;
+      font-size: 0.75rem;
+      color: #444;
+      max-width: 500px;
+      text-align: center;
+      line-height: 1.8;
+    }
+  </style>
+</head>
+<body>
+
+<h1>しりとり vs AI</h1>
+<p id="subtitle">制限時間10秒 ／ 使った言葉は再利用不可 ／ 「ん」で終わったら負け</p>
+
+<div id="scoreboard">
+  <div class="score-box" id="player-score">
+    <div class="label">あなた</div>
+    <div class="val" id="ps">0</div>
+  </div>
+  <div class="score-box" id="timer-box">
+    <div class="label">残り</div>
+    <div class="val" id="timer">10</div>
+  </div>
+  <div class="score-box" id="ai-score">
+    <div class="label">AI</div>
+    <div class="val" id="as">0</div>
+  </div>
+</div>
+
+<div id="history-container"></div>
+
+<div id="current-char">次は「<span id="next-char">？</span>」から始まる言葉</div>
+
+<div id="input-row">
+  <input id="word-input" type="text" placeholder="ひらがなで入力…" autocomplete="off" />
+  <button id="submit-btn">送る</button>
+</div>
+
+<div id="message"></div>
+<button id="restart-btn">もう一度遊ぶ</button>
+<div id="used-words"></div>
+
+<script>
+// -------- AI の単語リスト (ひらがな) --------
+const AI_WORDS = [
+  "あめ","あり","あおい","あいす","あさがお",
+  "いぬ","いか","いちご","いのしし","いもうと",
+  "うみ","うさぎ","うどん","うぐいす","うちわ",
+  "えび","えのき","えほん","えんぴつ","えがお",
+  "おに","おかし","おむすび","おしろ","おもちゃ",
+  "かに","かわ","かえる","かさ","かぼちゃ",
+  "きつね","きのこ","きんぎょ","きゅうり","きしゃ",
+  "くも","くじら","くつ","くるま","くまもと",
+  "けむし","けしごむ","けいたい","けむり",
+  "こあら","こま","こおり","こどり","こうもり",
+  "さかな","さくら","さる","さいころ","さんぽ",
+  "しか","しろ","しんかんせん","しいたけ","しまうま",
+  "すいか","すずめ","すもう","すなば","すいどう",
+  "せみ","せかい","せんせい","せっけん",
+  "そら","そば","そふと","そうじき",
+  "たこ","たぬき","たまご","たいこ","たんぽぽ",
+  "ちょう","ちきゅう","ちず","ちりとり","ちかてつ",
+  "つき","つる","つくえ","つばき","つなみ",
+  "てんぐ","てつどう","てがみ","てんさい",
+  "とら","とり","とけい","とまと","とのさま",
+  "なまず","なすび","なわとび","なんきん",
+  "にわとり","にじ","にんじん","にんぎょ",
+  "ぬいぐるみ","ぬかみそ",
+  "ねこ","ねずみ","ねむり",
+  "のり","のぞみ","のはら",
+  "はち","はな","はくちょう","はりねずみ","はんこ",
+  "ひよこ","ひまわり","ひかり","ひつじ",
+  "ふくろう","ふじさん","ふうせん","ふとん",
+  "へび","へいわ","へりこぷた",
+  "ほたる","ほんや","ほうれんそう","ほし",
+  "まつり","まぐろ","まるた","まどり",
+  "みかん","みずうみ","みつばち","みかづき",
+  "むかし","むしめがね","むすこ",
+  "めだか","めがね","めもちょう",
+  "もぐら","もみじ","もちつき","もんしろちょう",
+  "やぎ","やきとり","やかん","やしろ",
+  "ゆき","ゆめ","ゆびわ","ゆうやけ",
+  "よる","ようかい","よだれ","よこはま",
+  "らくだ","らんどせる",
+  "りす","りんご","りゅう","りょうり",
+  "るびー","るすばん",
+  "れいぞうこ","れもん","れんこん",
+  "ろうそく","ろばた","ろけっと",
+  "わに","わかめ","わらい","わたがし",
+];
+
+// -------- 小文字→大文字変換 --------
+const LARGE = {"ぁ":"あ","ぃ":"い","ぅ":"う","ぇ":"え","ぉ":"お","っ":"つ","ゃ":"や","ゅ":"ゆ","ょ":"よ","ゎ":"わ","ー":"ー"};
+function lastChar(w) {
+  let c = w[w.length - 1];
+  return LARGE[c] || c;
+}
+function firstChar(w) {
+  let c = w[0];
+  return LARGE[c] || c;
+}
+
+// -------- 状態 --------
+let state = {
+  used: new Set(),
+  currentChar: "",
+  playerScore: 0,
+  aiScore: 0,
+  timer: 10,
+  interval: null,
+  turn: "player",  // "player" | "ai"
+  over: false,
+};
+
+function init() {
+  state.used.clear();
+  state.playerScore = 0;
+  state.aiScore = 0;
+  state.timer = 10;
+  state.over = false;
+  state.turn = "player";
+  clearInterval(state.interval);
+
+  document.getElementById("history-container").innerHTML = "";
+  document.getElementById("ps").textContent = "0";
+  document.getElementById("as").textContent = "0";
+  document.getElementById("message").textContent = "";
+  document.getElementById("message").className = "";
+  document.getElementById("restart-btn").style.display = "none";
+  document.getElementById("used-words").textContent = "";
+  document.getElementById("word-input").value = "";
+  document.getElementById("word-input").disabled = false;
+  document.getElementById("submit-btn").disabled = false;
+
+  // 最初の文字をランダムに決める
+  const starters = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわ";
+  state.currentChar = starters[Math.floor(Math.random() * starters.length)];
+  document.getElementById("next-char").textContent = state.currentChar;
+  addHistory("sys", `「${state.currentChar}」から始めてください！`);
+  startTimer();
+}
+
+function startTimer() {
+  clearInterval(state.interval);
+  state.timer = 10;
+  updateTimer();
+  state.interval = setInterval(() => {
+    state.timer--;
+    updateTimer();
+    if (state.timer <= 0) {
+      clearInterval(state.interval);
+      endGame(state.turn === "player" ? "タイムオーバー！あなたの負け 😭" : "タイムオーバー！AI の負け 🎉");
+    }
+  }, 1000);
+}
+
+function updateTimer() {
+  const el = document.getElementById("timer");
+  el.textContent = state.timer;
+  el.style.color = state.timer <= 3 ? "#ef4444" : "#f59e0b";
+}
+
+function addHistory(who, text) {
+  const container = document.getElementById("history-container");
+  const div = document.createElement("div");
+  div.className = "entry";
+  const tag = document.createElement("span");
+  tag.className = "tag " + who;
+  tag.textContent = who === "you" ? "あなた" : who === "ai" ? "AI" : "…";
+  const word = document.createElement("span");
+  word.className = "word";
+  word.textContent = text;
+  div.appendChild(tag);
+  div.appendChild(word);
+  container.prepend(div);
+}
+
+function setMessage(text, ok = false) {
+  const el = document.getElementById("message");
+  el.textContent = text;
+  el.className = ok ? "ok" : "";
+}
+
+function endGame(reason) {
+  state.over = true;
+  clearInterval(state.interval);
+  document.getElementById("word-input").disabled = true;
+  document.getElementById("submit-btn").disabled = true;
+  setMessage(reason);
+  addHistory("sys", reason);
+  document.getElementById("restart-btn").style.display = "inline-block";
+  document.getElementById("used-words").textContent =
+    "使った言葉: " + [...state.used].join("・");
+}
+
+function validate(word) {
+  word = word.trim().toLowerCase();
+  if (!word) return "言葉を入力してください";
+  if (!/^[ぁ-ん]+$/.test(word)) return "ひらがなで入力してください";
+  if (firstChar(word) !== state.currentChar) return `「${state.currentChar}」から始まる言葉を入れてください`;
+  if (state.used.has(word)) return "その言葉はもう使われています";
+  return null;
+}
+
+function playerSubmit() {
+  if (state.over || state.turn !== "player") return;
+  const input = document.getElementById("word-input");
+  const word = input.value.trim();
+  const err = validate(word);
+  if (err) { setMessage(err); return; }
+  if (lastChar(word) === "ん") { endGame(`「${word}」—「ん」で終わった！あなたの負け 😭`); return; }
+
+  clearInterval(state.interval);
+  state.used.add(word);
+  state.playerScore++;
+  document.getElementById("ps").textContent = state.playerScore;
+  addHistory("you", word);
+  state.currentChar = lastChar(word);
+  document.getElementById("next-char").textContent = state.currentChar;
+  input.value = "";
+  setMessage("", true);
+
+  state.turn = "ai";
+  document.getElementById("word-input").disabled = true;
+  document.getElementById("submit-btn").disabled = true;
+  setMessage("AI が考えています…", true);
+
+  setTimeout(aiTurn, 800 + Math.random() * 600);
+}
+
+function aiTurn() {
+  if (state.over) return;
+  const candidates = AI_WORDS.filter(w =>
+    firstChar(w) === state.currentChar && !state.used.has(w)
+  );
+
+  if (candidates.length === 0) {
+    endGame(`AI が「${state.currentChar}」で始まる言葉を思いつきません！あなたの勝ち 🎉`);
+    return;
+  }
+
+  const word = candidates[Math.floor(Math.random() * candidates.length)];
+  if (lastChar(word) === "ん") {
+    state.used.add(word);
+    addHistory("ai", word);
+    endGame(`AI が「${word}」—「ん」で終わった！あなたの勝ち 🎉`);
+    return;
+  }
+
+  state.used.add(word);
+  state.aiScore++;
+  document.getElementById("as").textContent = state.aiScore;
+  addHistory("ai", word);
+  state.currentChar = lastChar(word);
+  document.getElementById("next-char").textContent = state.currentChar;
+  setMessage("");
+
+  state.turn = "player";
+  document.getElementById("word-input").disabled = false;
+  document.getElementById("submit-btn").disabled = false;
+  document.getElementById("word-input").focus();
+  startTimer();
+}
+
+document.getElementById("submit-btn").addEventListener("click", playerSubmit);
+document.getElementById("word-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") playerSubmit();
+});
+document.getElementById("restart-btn").addEventListener("click", init);
+
+init();
+</script>
+</body>
+</html>
